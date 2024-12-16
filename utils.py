@@ -3,6 +3,7 @@ from math import ceil
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 columns = [
     "engine_id", "time",
@@ -45,20 +46,37 @@ def draw_corr(df):
     sns.heatmap(df.corr(), annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
 
 
-def rolling_average_features(df, engine_id, window_size):
+def lowess_features(df, engine_id):
     df_copy = df.copy()
-    columns_to_smooth = [col for col in df_copy.columns if col not in ['time', 'engine_id']]  # Exclude 'time' column
     filtered_df = df_copy[df_copy['engine_id'] == engine_id]
-    df_averaged = filtered_df.copy()
+    filtered_df = filtered_df.copy()
+    columns_to_smooth = [col for col in filtered_df.columns if col not in ['time', 'engine_id']]
+    frac = 1.
     for col in columns_to_smooth:
-        df_averaged[col + " rolling"] = filtered_df[col].rolling(window=window_size, min_periods=1).mean()
-    return df_averaged
+        smoothed_values = []
+        for _, group in filtered_df.groupby('engine_id'):
+            smoothed = lowess(group[col], group['time'], frac=frac)[:, 1]
+            smoothed_values.extend(smoothed)
+        filtered_df[col + "_lowess"] = smoothed_values
+    return filtered_df
 
 
-def draw_time_series(df, engine_id, window_size):
-    df_averaged = rolling_average_features(df, engine_id, window_size)
-    print(df_averaged.columns)
-    columns_to_plot = [col for col in df_averaged.columns if col not in ['engine_id', 'time'] and "rolling" not in col]
+def lowess_features_overwrite(df):
+    df_copy = df.copy()
+    columns_to_smooth = [col for col in df_copy.columns if col not in ['time', 'engine_id']]
+    frac = 1.
+    for col in columns_to_smooth:
+        smoothed_values = []
+        for _, group in df_copy.groupby('engine_id'):
+            smoothed = lowess(group[col], group['time'], frac=frac)[:, 1]
+            smoothed_values.extend(smoothed)
+        df_copy[col] = smoothed_values
+    return df_copy
+
+
+def draw_time_series(df, engine_id):
+    df = df.copy()
+    columns_to_plot = [col for col in df.columns if col not in ['engine_id', 'time'] and "lowess" not in col]
 
     num_columns = len(columns_to_plot)
     fig, axes = plt.subplots(nrows=ceil(num_columns / 2), ncols=2, figsize=(24, 16), sharex=True)
@@ -66,8 +84,8 @@ def draw_time_series(df, engine_id, window_size):
     fig.subplots_adjust(hspace=0.5)
 
     for i, column in enumerate(columns_to_plot):
-        axes[i].plot(df_averaged['time'], df_averaged[column], label=column)
-        axes[i].plot(df_averaged['time'], df_averaged[column + " rolling"], label=column + " rolling average")
+        axes[i].plot(df['time'], df[column], label=column)
+        axes[i].plot(df['time'], df[column + "_lowess"], label=column + "_lowess")
         axes[i].grid(True)
         axes[i].legend(loc="upper left", fontsize=8)
 
@@ -77,39 +95,25 @@ def draw_time_series(df, engine_id, window_size):
     plt.show()
 
 
-def rolling_average_features_all(df, window_size):
-    df_copy = df.copy()
-    columns_to_smooth = [col for col in df_copy.columns if col not in ['time', 'engine_id']]
+def draw_time_series_for_all_engines(df):
+    columns_to_plot = [col for col in df.columns if col not in ['engine_id', 'time']]
 
-    for col in columns_to_smooth:
-        df_copy[col] = (df_copy.groupby('engine_id')[col]
-                        .rolling(window=window_size, min_periods=1)
-                        .mean()
-                        .reset_index(level=0, drop=True))
-    return df_copy, columns_to_smooth
+    averaged_features = df.groupby('time')[columns_to_plot].mean()
+    median_features = df.groupby('time')[columns_to_plot].median()
 
-
-def draw_time_series_for_all_engines(df, window_size):
-    df_copy = df.copy()
-    df_copy, columns_to_smooth = rolling_average_features_all(df_copy, window_size)
-    rolling_average_features_all(df_copy, window_size)
-
-    averaged_rolling = df_copy.groupby('time')[columns_to_smooth].mean()
-    median_rolling = df_copy.groupby('time')[columns_to_smooth].median()
-
-    fig, axes = plt.subplots(nrows=ceil(len(columns_to_smooth) / 2), ncols=2, figsize=(24, 16), sharex=True)
+    fig, axes = plt.subplots(nrows=ceil(len(columns_to_plot) // 2), ncols=2, figsize=(24, 16), sharex=True)
     axes = axes.flatten()
     fig.subplots_adjust(hspace=0.5)
 
-    for i, column in enumerate(columns_to_smooth):
-        axes[i].plot(averaged_rolling.index, averaged_rolling[column], label=f'Average Rolling mean {column}')
-        axes[i].plot(median_rolling.index, median_rolling[column], label=f'Average Rolling median {column}')
-        axes[i].set_title(f'Average Rolling mean/median for {column}')
+    for i, column in enumerate(columns_to_plot):
+        axes[i].plot(averaged_features.index, averaged_features[column], label=f'Mean of smoothed data: {column}')
+        axes[i].plot(median_features.index, median_features[column], label=f'Median of smoothed data: {column}')
+        axes[i].set_title(f'Mean/media for smoothed data: {column}')
         axes[i].grid(True)
         axes[i].legend(loc="upper left", fontsize=8)
 
     axes[-1].set_xlabel("Time")
-    fig.suptitle(f"Average Rolling mean/average for all Engines", fontsize=14)
+    fig.suptitle(f"Mean/average of smoothed data for all engines", fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     plt.show()
 
@@ -118,12 +122,12 @@ def draw_pct_change(df_with_pctchange, engine_id):
     df_with_pctchange = df_with_pctchange[df_with_pctchange['engine_id'] == engine_id]
     columns_to_plot = [col for col in df_with_pctchange.columns if "pct_change" in col]
     num_columns = len(columns_to_plot)
-    fig, axes = plt.subplots(nrows=num_columns // 2 + 1, ncols=2, figsize=(24, num_columns * 2), sharex=True)
+    fig, axes = plt.subplots(nrows=num_columns // 2, ncols=2, figsize=(24, num_columns * 2), sharex=True)
     axes = axes.flatten()
     fig.subplots_adjust(hspace=0.5)
 
     for i, column in enumerate(columns_to_plot):
-        axes[i].plot(df_with_pctchange['rul'], df_with_pctchange[column], label=column)
+        axes[i].plot(df_with_pctchange['time'], df_with_pctchange[column], label=column)
         axes[i].grid(True)
         axes[i].legend(loc="upper left", fontsize=8)
 
@@ -133,9 +137,10 @@ def draw_pct_change(df_with_pctchange, engine_id):
     plt.show()
 
 
-def pct_change(df, feature_columns):
+def pct_change(df, periods):
+    feature_cols = [col for col in df.columns if col not in ['engine_id', 'time']]
     df_with_pctchange = df.copy()
-    for col in feature_columns:
-        df_with_pctchange[f'{col}_pct_change'] = df_with_pctchange.groupby('engine_id')[col].pct_change(5)
-    df_with_pctchange.fillna(0, inplace=True)
+    for col in feature_cols:
+        df_with_pctchange[f'{col}_pct_change'] = df_with_pctchange.groupby('engine_id')[col].pct_change(periods)
+    df_with_pctchange.dropna(inplace=True)
     return df_with_pctchange
