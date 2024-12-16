@@ -1,8 +1,10 @@
 from math import ceil
 
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
+from sklearn.metrics import mean_squared_error, r2_score
 from statsmodels.nonparametric.smoothers_lowess import lowess
 
 columns = [
@@ -144,3 +146,10 @@ def pct_change(df, periods):
         df_with_pctchange[f'{col}_pct_change'] = df_with_pctchange.groupby('engine_id')[col].pct_change(periods)
     df_with_pctchange.dropna(inplace=True)
     return df_with_pctchange
+
+
+def evaluate(y_true, y_hat, label='test'):
+    mse = mean_squared_error(y_true, y_hat)
+    rmse = np.sqrt(mse)
+    variance = r2_score(y_true, y_hat)
+    print('{} set RMSE:{}, R2:{}'.format(label, rmse, variance))
