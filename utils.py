@@ -3,7 +3,9 @@ from math import ceil
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from mapie.conformity_scores import BaseRegressionScore
 from matplotlib import pyplot as plt
+from numpy._typing import NDArray
 from sklearn.metrics import mean_squared_error, r2_score
 from statsmodels.nonparametric.smoothers_lowess import lowess
 
@@ -156,16 +158,24 @@ def evaluate(y_true, y_hat, label='test'):
 
 
 def evaluate_mapie_output(result, y_true, max_rul, draw_size=100):
-    plt.figure(figsize=(30, 5))
+    plt.figure(figsize=(15, 5))
     y_pred, y_intervals = result
     y_pred_min = y_intervals[:, 0, :].clip(min=0, max=max_rul)
     y_pred_max = y_intervals[:, 1, :].clip(min=0, max=max_rul)
     x_vals = range(1, draw_size + 1)
-    plt.plot(x_vals, y_true[:draw_size], color='green', label='RUL (Actual)', alpha=1.)
-    plt.plot(x_vals, y_pred_min[:draw_size], color='blue', label='RUL min (Predicted)', alpha=1.)
-    plt.plot(x_vals, y_pred_max[:draw_size], color='red', label='RUL max (Predicted)', alpha=0.3)
-    plt.fill_between(x_vals, y_pred_min[:draw_size].flatten(), y_pred_max[:draw_size].flatten(), alpha=0.5)
+    plt.plot(x_vals, y_true[20:70], color='green', label='RUL (Actual)', alpha=1.)
+    plt.plot(x_vals, y_pred_min[20:70], color='blue', label='RUL min (Predicted)', alpha=1.)
+    plt.plot(x_vals, y_pred_max[20:70], color='red', label='RUL max (Predicted)', alpha=0.3)
+    plt.fill_between(x_vals, y_pred_min[20:70].flatten(), y_pred_max[20:70].flatten(), alpha=0.5)
     plt.xlabel("Sample")
     plt.ylabel("RUL")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.5)
+
+
+class CustomScore(BaseRegressionScore):
+    def get_signed_conformity_scores(self, y: NDArray, y_pred: NDArray, **kwargs) -> NDArray:
+        pass
+
+    def get_estimation_distribution(self, y_pred: NDArray, conformity_scores: NDArray, **kwargs) -> NDArray:
+        pass
